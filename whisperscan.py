@@ -1,34 +1,68 @@
-import urllib2
 import re
+import requests
+from Queue import Queue
+import threading
+import sys
+from bs4 import BeautifulSoup as bs
 
-def get302URL(keyword,pagenumber):
-    requesturl = "http://www.baidu.com/s?ie=utf-8&mod=1&isbd=1&isid=69C31E2567F24841&ie=utf-8&f=8&rsv_bp=1&tn=baiduadv&wd="+keyword+"&rn=50&pn="+pagenumber
-    request = urllib2.Request(requesturl)
-    request.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.155 Safari/537.36')
-    response = urllib2.urlopen(request)
-    urltext= response.read()
-    par = r'<div class="f13"><a target="_blank" href="(.+?)" class="c-showurl" style="text-decoration:none;">'
-    pattern = re.compile(par)
-    matchurl = re.findall(pattern,urltext,0)
-    return matchurl
+headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:51.0) Gecko/20100101 Firefox/51.0'}
 
-def getRealURL(url):
-    opener = None
-    try:
-        opener = urllib2.urlopen(url,timeout=5)
-        return opener.geturl()
-    except:
-        print "Request error url =" +url
 
+
+class BaiduUrlSpider(threading.Thread):
+    def __init__(self,queue):
+        threading.Thread.__init__(self)
+        self._queue = queue
+
+    def run(self):
+        while not self._queue.empty():
+            url = self._queue.get()
+            try:
+                self.spider(url)
+            except Exception,e:
+                print e
+                pass
+    def spider(self,url):
+        r = requests.get(url=url,headers=headers)
+        soup = bs(r.content,'lxml')
+        urls = soup.find_all(name='a',attrs={'data-click':re.compile('.'),'class':None})
+        for url in urls:
+            get_url = requests.get(url=url['href'],headers=headers,timeout=8)
+            if get_url.status_code == 200:
+                url_para = get_url.url
+                url_index_tmp = url_para.split('/')
+                url_index = url_index_tmp[0]+'//'+url_index_tmp[2]
+                f1 = open('out_para.txt','a+')
+                f1.write(url_para+'\n')
+                f1.close()
+                with open('out_index.txt') as f:
+                    if url_index in f.read():
+                        f2 =open('out_index','a+')
+                        f2.write(url_index+'\n')
+                        f2.close()
+
+
+
+
+def main(keyword,thread_count):
+    queue = Queue()
+    for i in range(0,750,10):
+        queue.put( 'https://www.baidu.com/s?wd=%s&pn=%s&rn=50'%(keyword,str(i)))
+    threads = []
+    thread_count = 10
+    for i in range(thread_count):
+        threads.append(BaiduUrlSpider(queue))
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
 
 
 if __name__ == '__main__':
+    if len(sys.argv) !=3:
+        print 'Enter:%s keyword thread_count'%sys.argv[0]
+        sys.exit(-1)
+    else:
+        main(sys.argv[1],sys.argv[2])
 
-    keyword = "inurl:php?id="
-    pagenumber ="1"
-    urllist = get302URL(keyword,pagenumber)
-    realurllist = range(49)
 
-    for i in range(len(urllist)):
-        realurllist[i] = getRealURL(urllist[i])
-    print  realurllist
